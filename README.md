@@ -39,4 +39,8 @@ This LISP script enables integration between VESC controllers and the Ninebot G3
 User parameters at the top of the script can be modified to:
 - Adjust speed limits
 - Change power settings
-- Enable/disable features 
+- Enable/disable features
+
+## Credits
+
+This project is based on the work from [vesc_m365_dash](https://github.com/m365fw/vesc_m365_dash) by [Izuna](https://github.com/1zun4), which provides VESC 6.0 Lisp implementation for M365/NineBot BLE compatibility. 
