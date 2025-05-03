@@ -15,15 +15,11 @@ This LISP script enables integration between VESC controllers and the Ninebot G3
 - **Lock Function**: Lock/unlock the scooter via dashboard button
 - **Button Control**: Use the dashboard button for various functions
 
-## Secret Modes
+## Special Features
 
-- Access unlimited modes by pressing button 2x while holding brake and throttle
-- Removes software-imposed speed/power limits
-- Allows using full hardware capability while staying compliant with regulations in normal mode
-- Enabled through VESC Tool's hardware limits for safety
-- Provides special displays:
-  - ESC temperature shown in error code field when stationary
-  - Motor current percentage shown as battery bar when riding
+- **Enhanced Dashboard Displays**:
+  - Real-time ESC temperature monitoring - Shows the actual temperature value in the error code field when standing still in secret mode, giving you a quick heat check before riding
+  - Dynamic motor current visualization - Converts the battery bar display into a real-time power meter showing motor current as a percentage of maximum when riding in secret mode
 
 ## Button Controls
 
