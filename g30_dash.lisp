@@ -268,7 +268,13 @@
                 (apply-mode) ; Apply mode on start-up
                 (stats-reset) ; reset stats when turning on
             }
-            (set 'light (bitwise-xor light 1)) ; toggle light
+            (if (and (= unlock 1) (>= (get-adc-decoded 0) 0.9)) ; In secret mode with full throttle (90% throttle or more)
+                {
+                    (set 'show-temp-when-idle (bitwise-xor show-temp-when-idle 1)) ; toggle temperature display
+                    (set 'feedback (+ 1 show-temp-when-idle)) ; beep feedback: 1 beep for off, 2 beeps for on
+                }
+                (set 'light (bitwise-xor light 1)) ; toggle light
+            )
         )
         (if (>= presses 2) ; double press
             {

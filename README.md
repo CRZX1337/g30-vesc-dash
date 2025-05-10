@@ -23,7 +23,9 @@ This LISP script enables integration between VESC controllers and the Ninebot G3
 
 ## Button Controls
 
-- **Single Press**: Toggle lights (or turn on if off)
+- **Single Press**: 
+  - Normal: Toggle lights (or turn on if off)
+  - In secret mode with full throttle: Toggle ESC temperature display
 - **Double Press**: 
   - With brake pressed: Lock/unlock
   - Without brake: Change speed mode
