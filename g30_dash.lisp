@@ -7,7 +7,7 @@
 (def min-speed 1)
 (def button-safety-speed (/ 0.1 3.6)) ; disabling button above 0.1 km/h (due to safety reasons)
 (def show-temp-when-idle 1) ; Show ESC temperature in error field when standing still
-(def show-current-as-batt 1) ; Show motor current as battery percentage in secret mode when riding
+(def show-current-as-batt 1) ; Show motor current as battery percentage in secret mode when riding!
 
 ; Speed modes (km/h, watts, current scale)
 (def eco-speed (/ 7 3.6))
