@@ -9,6 +9,19 @@
 (def show-temp-when-idle 1) ; Show ESC temperature in error field when standing still
 (def show-current-as-batt 1) ; Show motor current as battery percentage in secret mode when riding!
 
+; Field tweaking mode variables
+(def field-tweaking-mode 0) ; 0 = off, 1 = active
+(def field-tweaking-value 0) ; The value being adjusted
+(def brake-press-count 0) ; Count of full brake presses
+(def last-brake-state 0) ; For detecting brake press edges
+(def last-throttle-state 0) ; For detecting throttle press edges
+(def brake-hold-start-time 0) ; Time when brake hold started for exit
+(def brake-hold-duration 0) ; Current brake hold duration for exit
+(def throttle-hold-start-time 0) ; Time when throttle hold started for decrease
+(def throttle-hold-duration 0) ; Current throttle hold duration for decrease
+(def light-blink-timer 0) ; Timer for blinking light in tweaking mode
+(def light-blink-state 0) ; Current blink state (0 or 1)
+
 ; Speed modes (km/h, watts, current scale)
 (def eco-speed (/ 7 3.6))
 (def eco-current 0.6)
@@ -66,6 +79,8 @@
 (def speedmode 4)
 (def light 0)
 (def unlock 0)
+
+
 
 ; Sound feedback
 
@@ -128,6 +143,9 @@
                 )
             }
         )
+        
+        ; Handle field tweaking mode logic
+        (handle-field-tweaking)
     }
 )
 
@@ -166,12 +184,31 @@
             )
         )
 
-        ; batt field
-        (bufset-u8 tx-frame 8 current-percentage)
+        ; batt field - show field tweaking value when in tweaking mode and standing still
+        (if (and (= field-tweaking-mode 1) (= unlock 1) (<= current-speed min-speed))
+            (bufset-u8 tx-frame 8 field-tweaking-value) ; Show tweaking value as battery percentage
+            (if (and (= show-batt-in-idle 1) (= unlock 1) (<= current-speed min-speed))
+                (bufset-u8 tx-frame 8 battery) ; Show real battery when idle in secret mode
+                (bufset-u8 tx-frame 8 current-percentage) ; Normal battery display
+            )
+        )
 
-        ; light field
+        ; light field - blink during field tweaking mode
         (if (= off 0)
-            (bufset-u8 tx-frame 9 light)
+            (if (= field-tweaking-mode 1)
+                {
+                    ; Blink light every 500ms when in field tweaking mode
+                    (var current-time (systime))
+                    (if (>= (- current-time light-blink-timer) 500)
+                        {
+                            (set 'light-blink-state (bitwise-xor light-blink-state 1))
+                            (set 'light-blink-timer current-time)
+                        }
+                    )
+                    (bufset-u8 tx-frame 9 light-blink-state)
+                }
+                (bufset-u8 tx-frame 9 light)
+            )
             (bufset-u8 tx-frame 9 0)
         )
 
@@ -193,14 +230,21 @@
         (if (= (+ show-batt-in-idle unlock) 2)
             (if (> current-speed 1)
                 (bufset-u8 tx-frame 11 current-speed)
-                (bufset-u8 tx-frame 11 battery)) ; Always show real battery in idle mode
+                (if (and (= field-tweaking-mode 1) (<= current-speed min-speed))
+                    (bufset-u8 tx-frame 11 field-tweaking-value) ; Show tweaking value when in field tweaking mode and idle
+                    (bufset-u8 tx-frame 11 battery) ; Show real battery in idle mode
+                )
+            )
             (bufset-u8 tx-frame 11 current-speed)
         )
 
-        ; error field
-        (if (and (= show-temp-when-idle 1) (<= current-speed min-speed) (= (get-fault) 0) (= unlock 1))
-            (bufset-u8 tx-frame 12 (round (get-temp-fet))) ; Show ESC temperature when stationary with no errors and in secret mode
-            (bufset-u8 tx-frame 12 (get-fault))             ; Otherwise show actual error code
+        ; error field - disable temp display in field tweaking mode
+        (if (= field-tweaking-mode 1)
+            (bufset-u8 tx-frame 12 0) ; No error display in field tweaking mode
+            (if (and (= show-temp-when-idle 1) (<= current-speed min-speed) (= (get-fault) 0) (= unlock 1))
+                (bufset-u8 tx-frame 12 (round (get-temp-fet))) ; Show ESC temperature when stationary with no errors and in secret mode
+                (bufset-u8 tx-frame 12 (get-fault))             ; Otherwise show actual error code
+            )
         )
 
         ; calc crc
@@ -361,7 +405,167 @@
         (set-param 'max-speed speed)
         (set-param 'l-watt-max watts)
         (set-param 'l-current-max-scale current)
-        (set-param 'foc-fw-current-max fw)
+        ; Use field-tweaking-value for fw when in tweaking mode, otherwise use normal fw
+        (if (= field-tweaking-mode 1)
+            (set-param 'foc-fw-current-max field-tweaking-value)
+            (set-param 'foc-fw-current-max fw)
+        )
+    }
+)
+
+(defun handle-field-tweaking()
+    {
+        (var current-speed (* (get-speed) 3.6))
+        (var brake-level (get-adc-decoded 1))
+        (var throttle-level (get-adc-decoded 0))
+        (var current-time (systime))
+        
+        ; Check if we're in secret mode and standing still
+        (if (and (= unlock 1) (<= current-speed min-speed))
+            {
+                ; Detect brake press edge (transition from not pressed to fully pressed)
+                (if (and (>= brake-level 0.9) (= last-brake-state 0) (= field-tweaking-mode 0))
+                    {
+                        (set 'brake-press-count (+ brake-press-count 1))
+                        (set 'feedback 1) ; Single beep for each brake press
+                        
+                        ; Enter field tweaking mode after 2 full brake presses
+                        (if (>= brake-press-count 2)
+                            {
+                                (set 'field-tweaking-mode 1)
+                                (set 'feedback 3) ; 3 beeps to indicate entering tweaking mode
+                                ; Initialize with current fw value based on mode
+                                (if (= speedmode 1)
+                                    (set 'field-tweaking-value secret-drive-fw)
+                                    (if (= speedmode 2)
+                                        (set 'field-tweaking-value secret-eco-fw)
+                                        (set 'field-tweaking-value secret-sport-fw)
+                                    )
+                                )
+                                (set 'brake-press-count 0) ; Reset counter
+                            }
+                        )
+                    }
+                )
+                
+                ; Update brake state for edge detection
+                (if (>= brake-level 0.9)
+                    (set 'last-brake-state 1)
+                    (set 'last-brake-state 0)
+                )
+                
+                ; Handle exit from tweaking mode with 5-second brake hold
+                (if (= field-tweaking-mode 1)
+                    {
+                        ; Check if brake is fully pressed for exit
+                        (if (>= brake-level 0.9)
+                            {
+                                ; Start tracking brake hold time if not already tracking
+                                (if (= brake-hold-start-time 0)
+                                    (set 'brake-hold-start-time current-time)
+                                )
+                                
+                                ; Calculate how long brake has been held
+                                (set 'brake-hold-duration (- current-time brake-hold-start-time))
+                                
+                                ; Exit field tweaking mode after 5 seconds of brake hold
+                                (if (>= brake-hold-duration 5000)
+                                    {
+                                        (set 'field-tweaking-mode 0)
+                                        (set 'feedback 2) ; 2 beeps to indicate saving and exiting
+                                        ; Save the value to the appropriate fw variable
+                                        (if (= speedmode 1)
+                                            (set 'secret-drive-fw field-tweaking-value)
+                                            (if (= speedmode 2)
+                                                (set 'secret-eco-fw field-tweaking-value)
+                                                (set 'secret-sport-fw field-tweaking-value)
+                                            )
+                                        )
+                                        (apply-mode) ; Apply the new settings
+                                        (set 'brake-hold-start-time 0)
+                                        (set 'brake-hold-duration 0)
+                                    }
+                                )
+                            }
+                            {
+                                ; Brake not fully pressed, reset exit tracking
+                                (set 'brake-hold-start-time 0)
+                                (set 'brake-hold-duration 0)
+                            }
+                        )
+                        
+                        ; Handle throttle presses for value adjustment in tweaking mode
+                        ; Detect throttle press edge (transition from not pressed to pressed)
+                        (if (and (>= throttle-level 0.1) (= last-throttle-state 0))
+                            {
+                                (set 'field-tweaking-value (+ field-tweaking-value 1))
+                                ; Limit value to reasonable range (0-100)
+                                (if (> field-tweaking-value 100)
+                                    (set 'field-tweaking-value 100)
+                                )
+                                (set 'feedback 1) ; Single beep for increment
+                            }
+                        )
+                        
+                        ; Handle throttle hold for decreasing value
+                        (if (>= throttle-level 0.1)
+                            {
+                                ; Start tracking throttle hold time if not already tracking
+                                (if (= throttle-hold-start-time 0)
+                                    (set 'throttle-hold-start-time current-time)
+                                )
+                                
+                                ; Calculate how long throttle has been held
+                                (set 'throttle-hold-duration (- current-time throttle-hold-start-time))
+                                
+                                ; Decrease value after 4 seconds of throttle hold
+                                (if (>= throttle-hold-duration 4000)
+                                    {
+                                        (set 'field-tweaking-value (- field-tweaking-value 1))
+                                        ; Limit value to reasonable range (0-100)
+                                        (if (< field-tweaking-value 0)
+                                            (set 'field-tweaking-value 0)
+                                        )
+                                        (set 'feedback 1) ; Single beep for decrement
+                                        ; Reset hold time to allow continuous decreasing
+                                        (set 'throttle-hold-start-time current-time)
+                                    }
+                                )
+                            }
+                            {
+                                ; Throttle not pressed, reset hold tracking
+                                (set 'throttle-hold-start-time 0)
+                                (set 'throttle-hold-duration 0)
+                            }
+                        )
+                        
+                        ; Update throttle state for edge detection
+                        (if (>= throttle-level 0.1)
+                            (set 'last-throttle-state 1)
+                            (set 'last-throttle-state 0)
+                        )
+                    }
+                )
+            }
+            {
+                ; Not in secret mode or not standing still, exit tweaking mode and reset counters
+                (if (= field-tweaking-mode 1)
+                    {
+                        (set 'field-tweaking-mode 0)
+                        (apply-mode) ; Restore normal fw values
+                    }
+                )
+                (set 'brake-press-count 0)
+                (set 'last-brake-state 0)
+                (set 'last-throttle-state 0)
+                (set 'brake-hold-start-time 0)
+                (set 'brake-hold-duration 0)
+                (set 'throttle-hold-start-time 0)
+                (set 'throttle-hold-duration 0)
+                (set 'light-blink-timer 0)
+                (set 'light-blink-state 0)
+            }
+        )
     }
 )
 
