@@ -8,6 +8,7 @@
 (def button-safety-speed (/ 0.1 3.6)) ; disabling button above 0.1 km/h (due to safety reasons)
 (def show-temp-when-idle 1) ; Show ESC temperature in error field when standing still
 (def show-current-as-batt 1) ; Show motor current as battery percentage in secret mode when riding!
+(def field-tweaking-blink-light 1) ; Enable blinking light during field tweaking mode (1 = enabled, 0 = disabled)
 
 ; Field tweaking mode variables
 (def field-tweaking-mode 0) ; 0 = off, 1 = active
@@ -193,9 +194,9 @@
             )
         )
 
-        ; light field - blink during field tweaking mode
+        ; light field - blink during field tweaking mode (if enabled)
         (if (= off 0)
-            (if (= field-tweaking-mode 1)
+            (if (and (= field-tweaking-mode 1) (= field-tweaking-blink-light 1))
                 {
                     ; Blink light every 500ms when in field tweaking mode
                     (var current-time (systime))
