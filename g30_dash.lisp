@@ -406,11 +406,7 @@
         (set-param 'max-speed speed)
         (set-param 'l-watt-max watts)
         (set-param 'l-current-max-scale current)
-        ; Use field-tweaking-value for fw when in tweaking mode, otherwise use normal fw
-        (if (= field-tweaking-mode 1)
-            (set-param 'foc-fw-current-max field-tweaking-value)
-            (set-param 'foc-fw-current-max fw)
-        )
+        (set-param 'foc-fw-current-max fw)
     }
 )
 
@@ -545,6 +541,9 @@
                             (set 'last-throttle-state 1)
                             (set 'last-throttle-state 0)
                         )
+                        
+                        ; Apply field-tweaking value in real-time during tweaking mode
+                        (set-param 'foc-fw-current-max field-tweaking-value)
                     }
                 )
             }
